@@ -38,10 +38,7 @@
         "id": "proxmox-stats",
         "titleKey": "nav.proxmoxStats",
         "icon": "HardDrive",
-        "openFrom": [
-          "host-context-menu",
-          "palette"
-        ]
+        "openFrom": ["host-context-menu", "palette"]
       }
     ],
     "settings": {
@@ -76,9 +73,5 @@
     }
   },
   "locales": "locales",
-  "platforms": [
-    "linux",
-    "win32",
-    "darwin"
-  ]
+  "platforms": ["linux", "win32", "darwin"]
 }
