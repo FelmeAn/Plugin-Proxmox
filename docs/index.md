@@ -21,8 +21,8 @@ Imported guests go in a folder named after their node.
 
 Termix guesses how each guest connects:
 
-- **Windows / RDP detection**: guests whose name matches one of these patterns are set up for RDP, if [Remote Desktop](/plugins/remote-desktop) is on.
-- **Docker detection**: guests whose name matches turn on [Docker](/plugins/docker).
+- Windows / RDP detection: guests whose name matches one of these patterns are set up for RDP, if [Remote Desktop](/plugins/remote-desktop) is on.
+- Docker detection: guests whose name matches turn on [Docker](/plugins/docker).
 
 Both are comma separated name patterns, not case sensitive. You can change any guest before importing.
 
@@ -43,5 +43,5 @@ Poll interval sets how often it refreshes, 15 seconds or more. If the node name 
 
 ## Troubleshooting
 
-- **pvesh was not found.** The host isn't a Proxmox node, or the SSH user can't run `pvesh`.
-- **Guests have no IP.** Proxmox only knows a VM's IP when the QEMU guest agent runs in it. Install the agent, or set the address by hand after import.
+- pvesh was not found: The host isn't a Proxmox node, or the SSH user can't run `pvesh`.
+- Guests have no IP: Proxmox only knows a VM's IP when the QEMU guest agent runs in it. Install the agent, or set the address by hand after import.
