@@ -1,3 +1,4 @@
+import { PLUGIN_ID } from "./plugin-id";
 import { useEffect, useState, type ComponentType } from "react";
 import { Boxes, HardDrive, Server } from "lucide-react";
 import {
@@ -29,7 +30,7 @@ type Opener = (request: DiscoverRequest) => void;
 // The Proxmox fields are this plugin's host settings, saved with the host
 // through form.pluginSettings.proxmox.
 function ProxmoxHostSection({ form, updateForm }: HostEditorSectionProps) {
-  const values = (form.pluginSettings?.proxmox ?? {}) as Record<
+  const values = (form.pluginSettings?.[PLUGIN_ID] ?? {}) as Record<
     string,
     unknown
   >;
@@ -43,7 +44,7 @@ function ProxmoxHostSection({ form, updateForm }: HostEditorSectionProps) {
         ...current,
         pluginSettings: {
           ...all,
-          proxmox: { ...(all.proxmox ?? {}), [key]: value },
+          [PLUGIN_ID]: { ...(all[PLUGIN_ID] ?? {}), [key]: value },
         },
       };
     });
@@ -108,7 +109,7 @@ function ProxmoxStatsStandalone({ hostId }: StandaloneViewProps) {
 export function proxmoxSettings(
   host: Pick<PluginHostRecord, "pluginSettings">,
 ): Record<string, unknown> {
-  return host.pluginSettings?.proxmox ?? {};
+  return host.pluginSettings?.[PLUGIN_ID] ?? {};
 }
 
 export function activate(app: TermixApp): void {
@@ -199,7 +200,7 @@ export function activate(app: TermixApp): void {
   });
 
   app.registerHostEditorSection({
-    id: "proxmox",
+    id: "proxmox-fn",
     group: "ssh",
     titleKey: "hosts.tabProxmox",
     icon: Server,
@@ -207,7 +208,7 @@ export function activate(app: TermixApp): void {
     component: ProxmoxHostSection,
   });
 
-  app.registerTab("proxmox-stats", ProxmoxStatsTabView, {
+  app.registerTab("proxmox-fn-stats", ProxmoxStatsTabView, {
     icon: HardDrive,
     titleKey: "nav.proxmoxStats",
     requiresHost: true,
@@ -217,13 +218,13 @@ export function activate(app: TermixApp): void {
   });
 
   app.registerHostAction({
-    id: "proxmox-stats",
+    id: "proxmox-fn-stats",
     titleKey: "nav.proxmoxStats",
     icon: HardDrive,
     kind: "open",
     order: 60,
-    tabType: "proxmox-stats",
-    copyUrlView: "proxmox-stats",
+    tabType: "proxmox-fn-stats",
+    copyUrlView: "proxmox-fn-stats",
     when: (host) => proxmoxSettings(host).enableProxmoxStats === true,
   });
 }

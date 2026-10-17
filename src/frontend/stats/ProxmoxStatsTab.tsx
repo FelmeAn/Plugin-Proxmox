@@ -1,3 +1,4 @@
+import { PLUGIN_ID } from "../plugin-id";
 /* eslint-disable react-hooks/exhaustive-deps */
 import React from "react";
 import {
@@ -122,7 +123,7 @@ function ProxmoxStatsInner({
     null,
   );
 
-  const proxmoxSettings = currentHostConfig?.pluginSettings?.proxmox;
+  const proxmoxSettings = currentHostConfig?.pluginSettings?.[PLUGIN_ID];
   const statsConfig = React.useMemo(
     () => parseProxmoxStatsConfig(proxmoxSettings?.proxmoxStatsConfig),
     [proxmoxSettings?.proxmoxStatsConfig],

@@ -1,3 +1,4 @@
+import { PLUGIN_ID } from "./plugin-id";
 import { useRef, useState } from "react";
 import {
   notifyHostsChanged,
@@ -75,7 +76,7 @@ export function ProxmoxDiscoverDialog({
       (
         h.pluginSettings as
           Record<string, Record<string, unknown> | undefined> | undefined
-      )?.proxmox?.enableProxmox === true,
+      )?.[PLUGIN_ID]?.enableProxmox === true,
   );
 
   // The Proxmox host the discovery runs against; imported guests are grouped
@@ -189,7 +190,7 @@ export function ProxmoxDiscoverDialog({
             ? { "remote-desktop": { enableRdp: true, rdpPort: 3389 } }
             : {}),
           ...(g.enableDocker ? { docker: { enableDocker: true } } : {}),
-          proxmox: {
+          [PLUGIN_ID]: {
             proxmoxConfig: {
               source: {
                 source: "proxmox",

@@ -1,3 +1,4 @@
+import { PLUGIN_ID } from "./plugin-id";
 import type { PluginHostRecord } from "@termix-ssh/plugin-sdk/frontend";
 
 interface GuestRef {
@@ -21,7 +22,7 @@ export function importedGuestKeys(
 ): Set<string> {
   const keys = new Set<string>();
   for (const host of hosts) {
-    const config = host.pluginSettings?.proxmox?.proxmoxConfig as
+    const config = host.pluginSettings?.[PLUGIN_ID]?.proxmoxConfig as
       | {
           source?: Partial<GuestRef> & {
             source?: string;

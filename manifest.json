@@ -1,6 +1,6 @@
 {
-  "id": "proxmox",
-  "name": "Proxmox",
+  "id": "proxmox-fn",
+  "name": "Proxmox (felme test)",
   "version": "1.0.2",
   "description": "Import Proxmox VE guests as hosts, keep them in sync and watch node stats.",
   "author": {
@@ -38,7 +38,7 @@
   "contributes": {
     "tabs": [
       {
-        "id": "proxmox-stats",
+        "id": "proxmox-fn-stats",
         "titleKey": "nav.proxmoxStats",
         "icon": "HardDrive",
         "openFrom": ["host-context-menu", "palette"]

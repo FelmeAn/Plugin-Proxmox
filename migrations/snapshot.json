@@ -33,8 +33,7 @@
           "type": "integer"
         }
       },
-      "indexes": [],
-      "adopts": "proxmox_node_history"
+      "indexes": []
     },
     "stats_preferences": {
       "columns": {
@@ -69,12 +68,14 @@
       },
       "indexes": [
         {
-          "name": "idx_proxmox_stats_prefs_user_host",
-          "columns": ["userId", "hostId"],
+          "name": "idx_p_proxmox_fn_stats_prefs_user_host",
+          "columns": [
+            "userId",
+            "hostId"
+          ],
           "unique": true
         }
-      ],
-      "adopts": "proxmox_stats_preferences"
+      ]
     }
   }
 }
