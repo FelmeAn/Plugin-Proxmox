@@ -146,6 +146,53 @@ describe("ProxmoxPollingManager", () => {
     manager.destroy();
   });
 
+  it("collects over the API when collectFromApi returns a snapshot", async () => {
+    const host: TestHost = { id: 6, userId: "user-1" };
+    const fetchHostById = vi.fn(async () => host);
+    const withSshConnection = vi.fn();
+    const collectFromApi = vi.fn(async () => snapshot() as never);
+    const manager = new ProxmoxPollingManager<TestHost>({
+      fetchHostById,
+      withSshConnection: withSshConnection as never,
+      collectFromApi,
+      historyRepository: {
+        create: vi.fn(async () => {}),
+        pruneOlderThan: vi.fn(async () => {}),
+        listRange: vi.fn(async () => []),
+      } as never,
+    });
+
+    manager.registerViewer(6, "viewer-1", "user-1");
+    await vi.waitFor(() => expect(manager.getStats(6)).toBeDefined());
+    expect(collectFromApi).toHaveBeenCalledWith(host, null, "user-1");
+    expect(withSshConnection).not.toHaveBeenCalled();
+    manager.destroy();
+  });
+
+  it("falls back to SSH when collectFromApi resolves null", async () => {
+    const host: TestHost = { id: 7, userId: "user-1" };
+    collectProxmoxStats.mockResolvedValue(snapshot());
+    const fetchHostById = vi.fn(async () => host);
+    const withSshConnection = vi.fn(
+      async (_host: TestHost, fn: (client: Client) => Promise<unknown>) =>
+        fn({} as Client),
+    );
+    const manager = new ProxmoxPollingManager<TestHost>({
+      fetchHostById,
+      withSshConnection: withSshConnection as never,
+      collectFromApi: vi.fn(async () => null),
+      historyRepository: {
+        create: vi.fn(async () => {}),
+        pruneOlderThan: vi.fn(async () => {}),
+        listRange: vi.fn(async () => []),
+      } as never,
+    });
+
+    manager.registerViewer(7, "viewer-1", "user-1");
+    await vi.waitFor(() => expect(withSshConnection).toHaveBeenCalled());
+    manager.destroy();
+  });
+
   it("keeps the error code so the UI can translate it", async () => {
     const { ProxmoxError } =
       await import("../../src/backend/proxmox-shared.js");

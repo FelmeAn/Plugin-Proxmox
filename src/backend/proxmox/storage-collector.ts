@@ -1,5 +1,6 @@
 import type { Client } from "ssh2";
 import { directRunner, type PveshRunner } from "./pvesh-runner.js";
+import { pveshReader, type ProxmoxReader } from "./reader.js";
 import { toFixedNum } from "./common-utils.js";
 import { isSafeNodeName } from "../proxmox-shared.js";
 
@@ -29,20 +30,20 @@ export async function collectProxmoxStorage(
   nodeName: string,
   run: PveshRunner = directRunner(client),
 ): Promise<ProxmoxStorageResult> {
+  return readProxmoxStorage(pveshReader(run), nodeName);
+}
+
+/** The node's /nodes/{node}/storage, read over either transport. */
+export async function readProxmoxStorage(
+  read: ProxmoxReader,
+  nodeName: string,
+): Promise<ProxmoxStorageResult> {
   if (!isSafeNodeName(nodeName)) {
     return EMPTY_RESULT;
   }
 
   try {
-    const { stdout, code } = await run(
-      `pvesh get /nodes/${nodeName}/storage --output-format json`,
-      25000,
-    );
-    if (code !== 0) {
-      return EMPTY_RESULT;
-    }
-
-    const data = JSON.parse(stdout);
+    const data = await read(`/nodes/${nodeName}/storage`, 25000);
     if (!Array.isArray(data)) {
       return EMPTY_RESULT;
     }

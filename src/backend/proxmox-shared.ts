@@ -7,7 +7,17 @@ export function isSafeNodeName(name: string): boolean {
 }
 
 export type ProxmoxErrorCode =
-  "PVESH_NOT_FOUND" | "PVESH_BAD_OUTPUT" | "NODE_NAME_INVALID";
+  | "PVESH_NOT_FOUND"
+  | "PVESH_BAD_OUTPUT"
+  | "NODE_NAME_INVALID"
+  | "API_NOT_CONFIGURED"
+  | "API_AUTH_FAILED"
+  | "API_FORBIDDEN"
+  | "API_TLS_FAILED"
+  | "API_UNREACHABLE"
+  | "API_REQUEST_FAILED"
+  | "API_BAD_RESPONSE"
+  | "API_OWNER_ONLY";
 
 /** An error the UI can show in the user's language by its code. */
 export class ProxmoxError extends Error {

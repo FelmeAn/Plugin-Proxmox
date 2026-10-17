@@ -1,5 +1,6 @@
 import type { Client } from "ssh2";
 import { directRunner, type PveshRunner } from "./pvesh-runner.js";
+import { pveshReader, type ProxmoxReader } from "./reader.js";
 import { toFixedNum } from "./common-utils.js";
 import { isSafeNodeName } from "../proxmox-shared.js";
 
@@ -54,20 +55,24 @@ export async function collectProxmoxNodeStatus(
   nodeName: string,
   run: PveshRunner = directRunner(client),
 ): Promise<ProxmoxNodeStatusResult> {
+  return readProxmoxNodeStatus(pveshReader(run), nodeName);
+}
+
+/** The node's /nodes/{node}/status, read over either transport. */
+export async function readProxmoxNodeStatus(
+  read: ProxmoxReader,
+  nodeName: string,
+): Promise<ProxmoxNodeStatusResult> {
   if (!isSafeNodeName(nodeName)) {
     return EMPTY_RESULT;
   }
 
   try {
-    const { stdout, code } = await run(
-      `pvesh get /nodes/${nodeName}/status --output-format json`,
-      25000,
-    );
-    if (code !== 0) {
+    const raw = await read(`/nodes/${nodeName}/status`, 25000);
+    if (!raw || typeof raw !== "object") {
       return EMPTY_RESULT;
     }
-
-    const data = JSON.parse(stdout) as Record<string, unknown>;
+    const data = raw as Record<string, unknown>;
 
     const cpuFraction = typeof data.cpu === "number" ? data.cpu : null;
     const cpuinfo = (data.cpuinfo as Record<string, unknown>) || {};

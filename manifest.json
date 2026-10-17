@@ -13,6 +13,7 @@
   "category": "Infrastructure",
   "icon": "Server",
   "features": [
+    "Reach a node over SSH or the Proxmox REST API with an API token",
     "Find and import VMs and LXC containers from a node",
     "Keep imported hosts in sync on a schedule",
     "Set up Windows guests for RDP and turn on Docker for guests by name",
@@ -29,6 +30,7 @@
     "credentials:read",
     "ssh:connect",
     "db:own",
+    "network:outbound",
     "network:serve",
     "ui:surface",
     "users:impersonate"
@@ -68,6 +70,21 @@
             "type": "custom",
             "component": "proxmoxHostSettings",
             "defaultable": false
+          },
+          {
+            "key": "proxmoxApiConfig",
+            "type": "custom",
+            "component": "proxmoxHostSettings",
+            "defaultable": false,
+            "ownerOnly": true
+          },
+          {
+            "key": "proxmoxApiTokenSecret",
+            "type": "secret",
+            "labelKey": "hosts.proxmoxApiTokenSecret",
+            "hidden": true,
+            "defaultable": false,
+            "ownerOnly": true
           }
         ]
       }

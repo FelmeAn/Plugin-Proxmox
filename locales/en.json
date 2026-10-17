@@ -42,7 +42,15 @@
     "noGuestsMatch": "No guests match the current filters.",
     "notEnabled": "Proxmox stats are not enabled for this host",
     "notEnabledHint": "Turn on Proxmox stats in this host's settings to see its node and guests.",
-    "pveshBadOutput": "pvesh returned output that could not be read"
+    "pveshBadOutput": "pvesh returned output that could not be read",
+    "apiNotConfigured": "The Proxmox API connection is incomplete. Check the URL, token and CA certificate.",
+    "apiAuthFailed": "Proxmox rejected the API token.",
+    "apiForbidden": "The API token lacks a permission this needs.",
+    "apiTlsFailed": "The Proxmox API certificate could not be verified.",
+    "apiUnreachable": "The Proxmox API could not be reached.",
+    "apiRequestFailed": "The Proxmox API returned an error.",
+    "apiBadResponse": "The Proxmox API returned a response that could not be read.",
+    "apiOwnerOnly": "Only the host's owner can use its Proxmox API token for this."
   },
   "hosts": {
     "tabProxmox": "Proxmox",
@@ -105,7 +113,29 @@
     "proxmoxGuestsSelected_one": "{{count}} guest, {{selected}} selected",
     "proxmoxGuestsSelected_other": "{{count}} guests, {{selected}} selected",
     "proxmoxImportButton_one": "Import {{count}} host",
-    "proxmoxImportButton_other": "Import {{count}} hosts"
+    "proxmoxImportButton_other": "Import {{count}} hosts",
+    "proxmoxConnection": "Proxmox connection",
+    "proxmoxTransport": "Connect via",
+    "proxmoxTransportDesc": "How Termix reads this node for discovery, sync and stats: pvesh over SSH, or the Proxmox REST API with an API token.",
+    "proxmoxTransportSsh": "SSH (pvesh)",
+    "proxmoxTransportApi": "Proxmox API",
+    "proxmoxApiUrl": "API URL",
+    "proxmoxApiUrlDesc": "Where the API answers, usually https://<node>:8006. Termix must reach it directly; jump hosts are not used for the API.",
+    "proxmoxApiTokenId": "API token ID",
+    "proxmoxApiTokenIdDesc": "In the form user@realm!tokenid. The token only needs read access.",
+    "proxmoxApiTokenSecret": "API token secret",
+    "proxmoxApiTokenSecretDesc": "Stored encrypted and never sent back to the browser. Only the host's owner can change it.",
+    "proxmoxApiTokenSecretSet": "Saved, type to replace",
+    "proxmoxApiTokenSecretClear": "Remove",
+    "proxmoxApiTokenSecretKeep": "Keep",
+    "proxmoxApiTls": "Certificate check",
+    "proxmoxApiTlsDesc": "Trust only the cluster's own CA, the server's trust store, or nothing.",
+    "proxmoxApiTlsInsecureWarning": "The certificate is not checked, so anyone on the network path could read the API token.",
+    "proxmoxApiTlsCa": "Cluster CA",
+    "proxmoxApiTlsSystem": "System trust store",
+    "proxmoxApiTlsInsecure": "Don't verify (insecure)",
+    "proxmoxApiCaPem": "CA certificate",
+    "proxmoxApiCaPemDesc": "Paste /etc/pve/pve-root-ca.pem from any node of the cluster."
   },
   "terminal": {
     "connected": "Connected"

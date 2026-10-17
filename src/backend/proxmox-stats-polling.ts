@@ -119,6 +119,15 @@ export class ProxmoxPollingManager<
         host: THost,
         fn: (client: Client) => Promise<T>,
       ) => Promise<T>;
+      /**
+       * Collects over the REST API when the host is set to use it, or
+       * resolves null so the poll falls back to SSH.
+       */
+      collectFromApi?: (
+        host: THost,
+        nodeName: string | null | undefined,
+        userId: string,
+      ) => Promise<ProxmoxStatsSnapshot | null>;
       historyRepository: ProxmoxNodeHistoryRepository;
       historyEnabled?: () => boolean;
     },
@@ -153,15 +162,21 @@ export class ProxmoxPollingManager<
         const config = parseProxmoxStatsConfig(refreshed.proxmoxStatsConfig);
 
         try {
-          const snapshot = await this.deps.withSshConnection(
-            refreshed,
-            (client) =>
+          const viaApi =
+            (await this.deps.collectFromApi?.(
+              refreshed,
+              config.nodeName,
+              userId,
+            )) ?? null;
+          const snapshot =
+            viaApi ??
+            (await this.deps.withSshConnection(refreshed, (client) =>
               collectProxmoxStats(
                 client,
                 config.nodeName,
                 refreshed.sudoPassword,
               ),
-          );
+            ));
 
           this.snapshotStore.set(host.id, {
             data: snapshot,

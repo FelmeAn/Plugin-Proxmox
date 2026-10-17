@@ -8,6 +8,8 @@ import type {
   PluginSshHost,
 } from "@termix-ssh/plugin-sdk/backend";
 import { connectSsh } from "./ssh.js";
+import { createApiReaderForHost } from "./proxmox-api-access.js";
+import type { ProxmoxReader } from "./proxmox/reader.js";
 import { pluginCtx } from "./plugin-ctx.js";
 import { resolveProxmoxImportAuth } from "./proxmox-import-auth.js";
 import { parseProxmoxJumpHosts } from "./proxmox-jump-hosts.js";
@@ -125,7 +127,7 @@ function matchesAny(name: string, patterns: string[]): boolean {
   return patterns.some((p) => lower.includes(p.toLowerCase()));
 }
 
-function parseProxmoxConfig(raw: unknown): {
+export function parseProxmoxConfig(raw: unknown): {
   windowsPatterns: string[];
   dockerPatterns: string[];
   preferredPrefixes: string[];
@@ -257,24 +259,232 @@ function mergeTags(
     .join(",");
 }
 
-async function discoverProxmoxGuestsForHost(
-  userId: string,
-  parsedHostId: number,
-  onProgress?: (done: number, total: number) => void,
-): Promise<{
-  host: PluginSshHostWithSudo;
+type ProxmoxDiscovery = {
+  hostName: string | null;
   guests: ProxmoxGuest[];
   credentialId: number | null;
   defaultCredentialId: number | null;
   jumpHosts: unknown[] | null;
   config: ReturnType<typeof parseProxmoxConfig>;
-}> {
+};
+
+/** The first address in a preferred range, else the first one found. */
+function pickPreferredIp(
+  ips: string[],
+  preferredPrefixes: string[],
+): string | null {
+  if (!ips.length) return null;
+  for (const prefix of preferredPrefixes) {
+    const match = ips.find((ip) => ip.startsWith(prefix));
+    if (match) return match;
+  }
+  return ips[0];
+}
+
+/**
+ * Lists the cluster's guests and works out each one's address, reading
+ * through whichever transport the host uses. The paths are the same for
+ * pvesh and the REST API.
+ */
+export async function discoverGuests(
+  read: ProxmoxReader,
+  config: ReturnType<typeof parseProxmoxConfig>,
+  options: {
+    concurrency: number;
+    badOutputCode: "PVESH_BAD_OUTPUT" | "API_BAD_RESPONSE";
+    onProgress?: (done: number, total: number) => void;
+  },
+): Promise<ProxmoxGuest[]> {
+  const ctx = pluginCtx();
+  const resources = await read("/cluster/resources", 25000);
+  if (!Array.isArray(resources)) {
+    throw new ProxmoxError(
+      "Proxmox returned a guest list that could not be read",
+      options.badOutputCode,
+      502,
+    );
+  }
+
+  type GuestBase = {
+    name: string;
+    vmid: number;
+    type: "qemu" | "lxc";
+    node: string;
+    status: string;
+  };
+
+  const guestBases: GuestBase[] = [];
+  for (const r of resources as Array<Record<string, unknown>>) {
+    const type = r.type as string;
+    if (type !== "qemu" && type !== "lxc") continue;
+    if (r.template) continue;
+    const node = r.node as string;
+    if (!isSafeNodeName(node)) {
+      ctx.log.warn(
+        `Skipping guest with unsafe node name: ${node} (vmid ${r.vmid})`,
+      );
+      continue;
+    }
+    const vmid = Number(r.vmid);
+    if (!Number.isInteger(vmid) || vmid <= 0) continue;
+    guestBases.push({
+      name: (r.name as string) || String(r.vmid),
+      vmid,
+      type: type as "qemu" | "lxc",
+      node,
+      status: (r.status as string) || "unknown",
+    });
+  }
+
+  async function resolveIp(g: GuestBase): Promise<string | null> {
+    if (g.type === "lxc") {
+      let configIp: string | null = null;
+      try {
+        const lxcConfig = await read(
+          `/nodes/${g.node}/lxc/${g.vmid}/config`,
+          25000,
+        );
+        configIp =
+          lxcConfig && typeof lxcConfig === "object"
+            ? parseLxcIp(
+                lxcConfig as Record<string, unknown>,
+                config.preferredPrefixes,
+              )
+            : null;
+      } catch {
+        configIp = null;
+      }
+      if (configIp) return configIp;
+      // Static config parsing found nothing (e.g. net0 uses ip=dhcp).
+      // Fall back to the live interface list for running containers.
+      if (g.status === "running") {
+        try {
+          const data = await read(
+            `/nodes/${g.node}/lxc/${g.vmid}/interfaces`,
+            12000,
+          );
+          const entries: Array<Record<string, unknown>> = Array.isArray(data)
+            ? data
+            : [];
+          const allIps: string[] = [];
+          for (const entry of entries) {
+            if (entry.name === "lo") continue;
+            const inet = entry.inet;
+            if (typeof inet !== "string") continue;
+            const m = inet.match(/^(\d{1,3}(?:\.\d{1,3}){3})\/\d+$/);
+            if (m && !m[1].startsWith("127.")) allIps.push(m[1]);
+          }
+          const picked = pickPreferredIp(allIps, config.preferredPrefixes);
+          if (picked) return picked;
+        } catch {
+          // Guest not running or interfaces unavailable
+        }
+      }
+      return null;
+    }
+    if (g.type === "qemu" && g.status === "running") {
+      try {
+        const data = (await read(
+          `/nodes/${g.node}/qemu/${g.vmid}/agent/network-get-interfaces`,
+          12000,
+        )) as { result?: unknown } | unknown[] | null;
+        const ifaces: Array<Record<string, unknown>> = Array.isArray(
+          (data as { result?: unknown } | null)?.result,
+        )
+          ? (data as { result: Array<Record<string, unknown>> }).result
+          : Array.isArray(data)
+            ? (data as Array<Record<string, unknown>>)
+            : [];
+        const allIps: string[] = [];
+        for (const iface of ifaces) {
+          if (iface.name === "lo") continue;
+          const addrs =
+            (iface["ip-addresses"] as Array<Record<string, string>>) ?? [];
+          for (const a of addrs) {
+            if (
+              a["ip-address-type"] === "ipv4" &&
+              !a["ip-address"].startsWith("127.")
+            ) {
+              allIps.push(a["ip-address"]);
+            }
+          }
+        }
+        const picked = pickPreferredIp(allIps, config.preferredPrefixes);
+        if (picked) return picked;
+      } catch {
+        // Guest agent absent or timed out
+      }
+    }
+    return null;
+  }
+
+  const ips: (string | null)[] = new Array(guestBases.length).fill(null);
+  let cursor = 0;
+  let completed = 0;
+  options.onProgress?.(0, guestBases.length);
+  async function ipWorker() {
+    while (cursor < guestBases.length) {
+      const i = cursor++;
+      ips[i] = await resolveIp(guestBases[i]);
+      completed++;
+      options.onProgress?.(completed, guestBases.length);
+    }
+  }
+  await Promise.all(
+    Array.from(
+      { length: Math.min(options.concurrency, guestBases.length) },
+      () => ipWorker(),
+    ),
+  );
+
+  return guestBases.map((g, i) => ({
+    ...g,
+    ip: ips[i],
+    connectionType: matchesAny(g.name, config.windowsPatterns) ? "rdp" : "ssh",
+    enableDocker: matchesAny(g.name, config.dockerPatterns),
+  }));
+}
+
+async function discoverProxmoxGuestsForHost(
+  userId: string,
+  parsedHostId: number,
+  onProgress?: (done: number, total: number) => void,
+): Promise<ProxmoxDiscovery> {
   const ctx = pluginCtx();
   const proxmoxCfgRaw = await ctx.settings.getHost(
     parsedHostId,
     "proxmoxConfig",
   );
   const config = parseProxmoxConfig(proxmoxCfgRaw);
+
+  const apiReader = await createApiReaderForHost(ctx, parsedHostId, {
+    ownerOnly: true,
+  });
+  if (apiReader) {
+    // API discovery is owner-only, so the wide owned record is available and
+    // carries the credential and jump hosts imported guests inherit.
+    const host = (await ctx.hosts.listOwned()).find(
+      (candidate) => candidate.id === parsedHostId,
+    );
+    ctx.log.info("Proxmox discovery over the REST API");
+    const guests = await discoverGuests(apiReader, config, {
+      // The API serves concurrent requests far better than pvesh over SSH.
+      concurrency: 6,
+      badOutputCode: "API_BAD_RESPONSE",
+      onProgress,
+    });
+    ctx.log.info(
+      `Proxmox discovery completed for host ${parsedHostId}: ${guests.length} guest(s)`,
+    );
+    return {
+      hostName: host?.name ?? null,
+      guests,
+      credentialId: host?.credentialId ?? null,
+      defaultCredentialId: config.defaultCredentialId,
+      jumpHosts: parseProxmoxJumpHosts(host?.jumpHosts),
+      config,
+    };
+  }
 
   const { client, host, dispose } = await connectSsh(parsedHostId, {
     purpose: "proxmox",
@@ -306,184 +516,40 @@ async function discoverProxmoxGuestsForHost(
       );
     }
 
-    const resourcesJson = await execPveshCommand(
-      client,
-      "pvesh get /cluster/resources --output-format json 2>/dev/null",
-      hostWithSudo.sudoPassword,
-    );
-
-    let resources: Array<Record<string, unknown>>;
-    try {
-      resources = JSON.parse(resourcesJson);
-    } catch {
-      throw new ProxmoxError(
-        "pvesh returned output that could not be read",
-        "PVESH_BAD_OUTPUT",
-        502,
+    const read: ProxmoxReader = async (path, timeoutMs = 25000) => {
+      const output = await execPveshCommand(
+        client,
+        `pvesh get ${path} --output-format json 2>/dev/null`,
+        hostWithSudo.sudoPassword,
+        timeoutMs,
       );
-    }
-
-    type GuestBase = {
-      name: string;
-      vmid: number;
-      type: "qemu" | "lxc";
-      node: string;
-      status: string;
-    };
-
-    const guestBases: GuestBase[] = [];
-    for (const r of resources) {
-      const type = r.type as string;
-      if (type !== "qemu" && type !== "lxc") continue;
-      if (r.template) continue;
-      const node = r.node as string;
-      if (!isSafeNodeName(node)) {
-        ctx.log.warn(
-          `Skipping guest with unsafe node name: ${node} (vmid ${r.vmid})`,
+      try {
+        return JSON.parse(output) as unknown;
+      } catch {
+        throw new ProxmoxError(
+          "pvesh returned output that could not be read",
+          "PVESH_BAD_OUTPUT",
+          502,
         );
-        continue;
       }
-      guestBases.push({
-        name: (r.name as string) || String(r.vmid),
-        vmid: Number(r.vmid),
-        type: type as "qemu" | "lxc",
-        node,
-        status: (r.status as string) || "unknown",
-      });
-    }
-
-    async function resolveIp(g: GuestBase): Promise<string | null> {
-      if (g.type === "lxc") {
-        let configIp: string | null = null;
-        try {
-          const cfgJson = await execPveshCommand(
-            client,
-            `pvesh get /nodes/${g.node}/lxc/${g.vmid}/config --output-format json 2>/dev/null`,
-            hostWithSudo.sudoPassword,
-            25000,
-          );
-          configIp = parseLxcIp(JSON.parse(cfgJson), config.preferredPrefixes);
-        } catch {
-          configIp = null;
-        }
-        if (configIp) return configIp;
-        // Static config parsing found nothing (e.g. net0 uses ip=dhcp).
-        // Fall back to the live interface list for running containers.
-        if (g.status === "running") {
-          try {
-            const ifRaw = await execPveshCommand(
-              client,
-              `pvesh get /nodes/${g.node}/lxc/${g.vmid}/interfaces --output-format json 2>/dev/null`,
-              hostWithSudo.sudoPassword,
-              12000,
-            );
-            const data = JSON.parse(ifRaw);
-            const entries: Array<Record<string, unknown>> = Array.isArray(data)
-              ? data
-              : [];
-            const allIps: string[] = [];
-            for (const entry of entries) {
-              if (entry.name === "lo") continue;
-              const inet = entry.inet;
-              if (typeof inet !== "string") continue;
-              const m = inet.match(/^(\d{1,3}(?:\.\d{1,3}){3})\/\d+$/);
-              if (m && !m[1].startsWith("127.")) allIps.push(m[1]);
-            }
-            if (allIps.length) {
-              for (const prefix of config.preferredPrefixes) {
-                const match = allIps.find((ip) => ip.startsWith(prefix));
-                if (match) return match;
-              }
-              return allIps[0];
-            }
-          } catch {
-            // Guest not running or interfaces unavailable
-          }
-        }
-        return null;
-      }
-      if (g.type === "qemu" && g.status === "running") {
-        try {
-          const ifJson = await execPveshCommand(
-            client,
-            `pvesh get /nodes/${g.node}/qemu/${g.vmid}/agent/network-get-interfaces --output-format json 2>/dev/null`,
-            hostWithSudo.sudoPassword,
-            12000,
-          );
-          const data = JSON.parse(ifJson);
-          const ifaces: Array<Record<string, unknown>> = Array.isArray(
-            data?.result,
-          )
-            ? data.result
-            : Array.isArray(data)
-              ? data
-              : [];
-          const allIps: string[] = [];
-          for (const iface of ifaces) {
-            if (iface.name === "lo") continue;
-            const addrs =
-              (iface["ip-addresses"] as Array<Record<string, string>>) ?? [];
-            for (const a of addrs) {
-              if (
-                a["ip-address-type"] === "ipv4" &&
-                !a["ip-address"].startsWith("127.")
-              ) {
-                allIps.push(a["ip-address"]);
-              }
-            }
-          }
-          if (allIps.length) {
-            for (const prefix of config.preferredPrefixes) {
-              const match = allIps.find((ip) => ip.startsWith(prefix));
-              if (match) return match;
-            }
-            return allIps[0];
-          }
-        } catch {
-          // Guest agent absent or timed out
-        }
-      }
-      return null;
-    }
+    };
 
     // Low concurrency on purpose: pvesh is heavy and small Proxmox nodes
     // (especially reached over a high-latency jump chain) suffer severe
     // contention when many run at once, so calls then exceed execCommand's
     // timeout and IPs come back empty. 2 keeps each call well under budget.
-    const CONCURRENCY = 2;
-    const ips: (string | null)[] = new Array(guestBases.length).fill(null);
-    let cursor = 0;
-    let completed = 0;
-    onProgress?.(0, guestBases.length);
-    async function ipWorker() {
-      while (cursor < guestBases.length) {
-        const i = cursor++;
-        ips[i] = await resolveIp(guestBases[i]);
-        completed++;
-        onProgress?.(completed, guestBases.length);
-      }
-    }
-    await Promise.all(
-      Array.from({ length: Math.min(CONCURRENCY, guestBases.length) }, () =>
-        ipWorker(),
-      ),
-    );
-
-    const guests: ProxmoxGuest[] = guestBases.map((g, i) => ({
-      ...g,
-      ip: ips[i],
-      connectionType: matchesAny(g.name, config.windowsPatterns)
-        ? "rdp"
-        : "ssh",
-      enableDocker: matchesAny(g.name, config.dockerPatterns),
-    }));
+    const guests = await discoverGuests(read, config, {
+      concurrency: 2,
+      badOutputCode: "PVESH_BAD_OUTPUT",
+      onProgress,
+    });
 
     ctx.log.info(
       `Proxmox discovery completed for host ${parsedHostId}: ${guests.length} guest(s)`,
     );
 
     return {
-      host: hostWithSudo,
+      hostName: (hostWithSudo.name as string | null | undefined) ?? null,
       guests,
       credentialId: hostCredentialId,
       defaultCredentialId: config.defaultCredentialId,
@@ -524,7 +590,7 @@ async function syncProxmoxHost(
 
   try {
     const discovery = await discoverProxmoxGuestsForHost(userId, sourceHostId);
-    const sourceHostName = String(discovery.host.name || "Proxmox");
+    const sourceHostName = String(discovery.hostName || "Proxmox");
     const defaultCredentialId =
       discovery.config.defaultCredentialId ?? discovery.credentialId ?? null;
     const importAuth = resolveProxmoxImportAuth(

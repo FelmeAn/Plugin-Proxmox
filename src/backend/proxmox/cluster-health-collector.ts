@@ -1,5 +1,6 @@
 import type { Client } from "ssh2";
 import { directRunner, type PveshRunner } from "./pvesh-runner.js";
+import { pveshReader, type ProxmoxReader } from "./reader.js";
 
 interface ProxmoxClusterNodeEntry {
   name: string;
@@ -23,16 +24,15 @@ export async function collectProxmoxClusterHealth(
   client: Client,
   run: PveshRunner = directRunner(client),
 ): Promise<ProxmoxClusterHealthResult> {
-  try {
-    const { stdout, code } = await run(
-      "pvesh get /cluster/status --output-format json",
-      15000,
-    );
-    if (code !== 0) {
-      return EMPTY_RESULT;
-    }
+  return readProxmoxClusterHealth(pveshReader(run));
+}
 
-    const data = JSON.parse(stdout);
+/** /cluster/status, read over either transport. */
+export async function readProxmoxClusterHealth(
+  read: ProxmoxReader,
+): Promise<ProxmoxClusterHealthResult> {
+  try {
+    const data = await read("/cluster/status", 15000);
     if (!Array.isArray(data)) {
       return EMPTY_RESULT;
     }

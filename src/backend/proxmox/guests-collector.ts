@@ -1,5 +1,6 @@
 import type { Client } from "ssh2";
 import { directRunner, type PveshRunner } from "./pvesh-runner.js";
+import { pveshReader, type ProxmoxReader } from "./reader.js";
 import { toFixedNum } from "./common-utils.js";
 import { isSafeNodeName } from "../proxmox-shared.js";
 
@@ -37,20 +38,20 @@ export async function collectProxmoxGuestsSummary(
   nodeName: string,
   run: PveshRunner = directRunner(client),
 ): Promise<ProxmoxGuestsSummaryResult> {
+  return readProxmoxGuestsSummary(pveshReader(run), nodeName);
+}
+
+/** The node's guests from /cluster/resources, read over either transport. */
+export async function readProxmoxGuestsSummary(
+  read: ProxmoxReader,
+  nodeName: string,
+): Promise<ProxmoxGuestsSummaryResult> {
   if (!isSafeNodeName(nodeName)) {
     return EMPTY_RESULT;
   }
 
   try {
-    const { stdout, code } = await run(
-      "pvesh get /cluster/resources --output-format json",
-      25000,
-    );
-    if (code !== 0) {
-      return EMPTY_RESULT;
-    }
-
-    const resources = JSON.parse(stdout);
+    const resources = await read("/cluster/resources", 25000);
     if (!Array.isArray(resources)) {
       return EMPTY_RESULT;
     }

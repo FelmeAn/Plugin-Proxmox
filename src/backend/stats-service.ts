@@ -16,6 +16,8 @@ import {
   type ProxmoxStatsPollableHost,
 } from "./proxmox-stats-polling.js";
 import type { ProxmoxNodeHistoryRepository } from "./proxmox-node-history-repository.js";
+import { createApiReaderForHost } from "./proxmox-api-access.js";
+import { collectProxmoxStatsFromApi } from "./proxmox/collect-proxmox-stats.js";
 
 const EMPTY_SNAPSHOT = {
   node: {
@@ -87,6 +89,11 @@ export function startProxmoxStatsService(
         },
         fn,
       ),
+    collectFromApi: (host, nodeName, userId) =>
+      ctx.asUser(userId, async () => {
+        const read = await createApiReaderForHost(ctx, host.id);
+        return read ? collectProxmoxStatsFromApi(read, nodeName) : null;
+      }),
     historyRepository,
   });
 

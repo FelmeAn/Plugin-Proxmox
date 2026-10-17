@@ -13,6 +13,7 @@ import type { PluginHostRecord } from "@termix-ssh/plugin-sdk/frontend";
 import { setProxmoxApp } from "./proxmox-api";
 import { ProxmoxDiscoverDialog } from "./ProxmoxDiscoverDialog";
 import { HostProxmoxTab } from "./HostProxmoxTab";
+import { HostProxmoxConnection } from "./HostProxmoxConnection";
 import { ProxmoxStatsTab } from "./stats/ProxmoxStatsTab";
 import ProxmoxStatsApp from "./stats/ProxmoxStatsApp";
 import { HostProxmoxStatsTab } from "./stats/HostProxmoxStatsTab";
@@ -54,9 +55,20 @@ function ProxmoxHostSection({ form, updateForm }: HostEditorSectionProps) {
       pollInterval: 60,
       nodeName: null,
     },
+    proxmoxApiConfig: values.proxmoxApiConfig ?? null,
+    proxmoxApiTokenSecret: values.proxmoxApiTokenSecret ?? null,
   };
   return (
     <>
+      {(sectionForm.enableProxmox || sectionForm.enableProxmoxStats) && (
+        <HostProxmoxConnection
+          form={
+            sectionForm as Parameters<typeof HostProxmoxConnection>[0]["form"]
+          }
+          setField={setField}
+          hostAddress={typeof form.ip === "string" ? form.ip : null}
+        />
+      )}
       <HostProxmoxTab
         form={sectionForm as Parameters<typeof HostProxmoxTab>[0]["form"]}
         setField={setField as Parameters<typeof HostProxmoxTab>[0]["setField"]}

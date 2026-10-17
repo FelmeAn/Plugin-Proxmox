@@ -151,3 +151,15 @@ export interface ProxmoxDiscoverResult {
   defaultCredentialId: number | null;
   jumpHosts?: unknown[] | null;
 }
+
+/** How the plugin reaches a Proxmox node. Mirrors src/backend/proxmox/api-config.ts. */
+export interface ProxmoxApiConfig {
+  transport: "ssh" | "api";
+  baseUrl: string | null;
+  tokenId: string | null;
+  tlsMode: "system" | "ca" | "insecure";
+  caPem: string | null;
+}
+
+/** A secret host setting as the browser sees it: never the value itself. */
+export type ProxmoxSecretValue = { set: boolean } | string | null;

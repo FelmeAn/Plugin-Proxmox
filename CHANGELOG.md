@@ -2,6 +2,10 @@
 
 ## 1.0.2
 
+### Added
+
+- Reach a node over the Proxmox REST API with an API token instead of SSH, for discovery, sync and stats
+
 ### Changed
 
 - The plugin name and description show in your language

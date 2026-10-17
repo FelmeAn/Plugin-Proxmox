@@ -1,6 +1,7 @@
 import type { Client } from "ssh2";
 import { execCommand } from "./common-utils.js";
 import { isSafeNodeName } from "../proxmox-shared.js";
+import type { ProxmoxReader } from "./reader.js";
 
 interface ProxmoxNodeNetworkInterface {
   name: string;
@@ -104,4 +105,43 @@ export async function collectProxmoxNodeNetwork(
   return {
     interfaces: interfaces.filter((iface) => !GUEST_INTERFACE.test(iface.name)),
   };
+}
+
+/**
+ * The node's network interfaces over the REST API, from
+ * /nodes/{node}/network. The API reports addresses and link state but no
+ * traffic counters, so rxBytes and txBytes stay null in API mode.
+ */
+export async function readProxmoxNodeNetwork(
+  read: ProxmoxReader,
+  nodeName: string,
+): Promise<ProxmoxNodeNetworkResult> {
+  if (!isSafeNodeName(nodeName)) {
+    return EMPTY_RESULT;
+  }
+  try {
+    const data = await read(`/nodes/${nodeName}/network`, 15000);
+    if (!Array.isArray(data)) return EMPTY_RESULT;
+    const interfaces: ProxmoxNodeNetworkInterface[] = [];
+    for (const entry of data as Array<Record<string, unknown>>) {
+      const name = typeof entry.iface === "string" ? entry.iface : "";
+      if (!name || name === "lo" || GUEST_INTERFACE.test(name)) continue;
+      const cidr = typeof entry.cidr === "string" ? entry.cidr : null;
+      const address =
+        typeof entry.address === "string" && entry.address
+          ? entry.address
+          : (cidr?.split("/")[0] ?? null);
+      interfaces.push({
+        name,
+        ip: address,
+        state: entry.active === 1 || entry.active === true ? "UP" : "DOWN",
+        rxBytes: null,
+        txBytes: null,
+      });
+    }
+    interfaces.sort((a, b) => a.name.localeCompare(b.name));
+    return { interfaces };
+  } catch {
+    return EMPTY_RESULT;
+  }
 }
